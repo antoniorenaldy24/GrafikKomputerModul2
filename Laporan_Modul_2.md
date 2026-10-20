@@ -44,7 +44,7 @@ Rincian spesifikasi untuk **setiap** dari tujuh tahapan pipeline adalah sebagai 
 | 6 | **Per-Fragment Operations** | Kandidat fragment RGBA + $z$ dari Fragment Shading | Fragment yang lolos pengujian atau terakumulasi dalam blending | **Fixed-Function** | Menjalankan rangkaian tes validasi piksel: *scissor test*, *stencil test*, *depth test* ($z$-buffer), serta operasi *alpha blending* terhadap isi buffer sebelumnya. |
 | 7 | **Framebuffer** | Piksel teruji RGBA dan nilai kedalaman akhir | Citra raster diskret pada memori grafika (*display scanout*) | **Fixed / Memory Buffer** | Menyimpan bit data visual pada memori video (VRAM) yang secara periodik dipindai (*scanned out*) oleh pengontrol tampilan ke layar monitor. |
 
-*Catatan Akademis:* Pada arsitektur GPU kontemporer pasca-Direct3D 10, tahapan seperti *Geometry Shader*, *Tessellation*, dan *Task/Mesh Shader* dapat disisipkan di antara tahap 2 dan 3. Namun, urutan konseptual di atas merepresentasikan fondasi inti yang dipelajari dan diwujudkan secara langsung melalui software rasteriser `raster.mjs`.
+*Catatan Akademis:* Pada arsitektur GPU kontemporer pasca-Direct3D 10, tahapan seperti *Geometry Shader*, *Tessellation*, dan *Task/Mesh Shader* dapat disisipkan di antara tahap 2 dan 3 (Hughes et al., 2013, Bab 15 & 18). Namun, urutan konseptual di atas merepresentasikan fondasi inti yang dipelajari dan diwujudkan secara langsung melalui software rasteriser `raster.mjs`.
 
 #### Q1(b) Light Transport dan Hubungan Fisika
 *Light transport* (transpor cahaya) adalah formulasi fisika optik yang didekati oleh setiap sistem *rendering*: **cahaya meninggalkan sumber radiasi (emitor), berinteraksi dan terpencar (sebagian diserap, sebagian dipantulkan atau dibiaskan) pada antarmuka permukaan material, lalu sebagian dari foton tersebut bergerak di sepanjang garis lurus dan mencapai bidang fokal kamera atau retina mata pengamat** (Marschner & Shirley, 2021, Bab 8).
@@ -61,12 +61,15 @@ Keduanya mendekati distribusi radiansi primer (*primary visibility*) yang identi
 #### Q1(c) Komparasi Forward (Object-Order) vs Backward (Image-Order)
 - **Forward / Object-Order (Rasterisation):**
   - *Mekanisme:* Melakukan loop terluar pada himpunan primitif geometri ($N_{primitif}$), memproyeksikan tiap primitif ke bidang layar, lalu menyentuh dan menulis data ke piksel-piksel yang berada di dalam batas ketercakupan primitif tersebut.
-  - *Kompleksitas:* $\mathcal{O}(N_{primitif} \times \text{luas piksel rata-rata})$.
-  - *Beban Kerja Optimal:* Aplikasi grafika *real-time* interaktif (misalnya game 3D, simulasi visual, CAD, dan viewer denah candi Pusaka3D pada modul ini) dengan scene yang terdiri dari ratusan ribu hingga jutaan segitiga kecil di mana koherensi lokal poligon sangat tinggi dan hardware rasteriser GPU dapat mengevaluasi ribuan poligon secara paralel.
+  - *Kompleksitas:* $\mathcal{O}(\sum_{i=1}^{N} L_i)$ untuk garis segmen (panjang total piksel terisi) atau $\mathcal{O}(N_{primitif} \times \text{luas area piksel})$ untuk poligon.
+  - *Beban Kerja Optimal:* Aplikasi grafika *real-time* interaktif (misalnya game 3D, simulasi visual, CAD, dan viewer denah candi Pusaka3D pada modul ini) di mana scene terdiri dari ribuan primitif diskret dan koherensi lokal poligon sangat tinggi sehingga perangkat keras GPU dapat mengevaluasi ribuan poligon secara paralel masif.
 - **Backward / Image-Order (Ray Casting / Ray Tracing):**
-  - *Mekanisme:* Melakukan loop terluar pada seluruh piksel layar ($W \times H$), menembakkan sinar untuk tiap piksel ke arah dunia 3D, dan menguji perpotongan sinar (*ray-primitive intersection*) terhadap struktur spasial scene.
-  - *Kompleksitas:* $\mathcal{O}((W \times H) \times \log N_{primitif})$ dengan struktur akselerasi spasial (BVH/kd-tree).
-  - *Beban Kerja Optimal:* Scene dengan permukaan lengkung analitis, objek reflektif/refraktif sempurna (misalnya bola cermin, kaca bening, optik kristal), atau simulasi pencahayaan global (*global illumination, soft shadows, caustic*) di mana efek pencahayaan sekunder bergantung pada informasi spasial non-lokal yang mahal dihampiri oleh rasterisasi.
+  - *Mekanisme:* Melakukan loop terluar pada seluruh piksel layar ($W \times H$), menembakkan sinar untuk tiap piksel ke arah scene 3D, dan menguji perpotongan sinar (*ray-primitive intersection*) atau kedekatan jarak.
+  - *Distingsi Kompleksitas Teoretis vs Terukur:*
+    1. **Pendekatan Brute-Force (diukur langsung pada `bench.mjs`):** Menguji setiap piksel terhadap seluruh $N_{primitif}$ secara linear tanpa struktur akselerasi spasial. Kompleksitasnya adalah $\mathcal{O}(W \times H \times N_{primitif})$. Untuk layar $800 \times 600$ dan 37 segmen garis, sistem mengevaluasi $800 \times 600 \times 37 = 17.760.000$ operasi jarak (terukur $97,94$ ms pada 1x).
+    2. **Pendekatan Teoretis dengan Akselerasi Spasial (BVH / kd-Tree):** Pada *production ray tracer* (seperti Embree atau OptiX), geometri diorganisasi ke dalam hierarki volume pembatas spasial (*Bounding Volume Hierarchy*), sehingga uji perpotongan per-sinar tereduksi secara logaritmik menjadi $\mathcal{O}((W \times H) \times \log N_{primitif})$.
+  - *Beban Kerja Optimal:* Scene dengan permukaan lengkung analitis murni, objek reflektif/refraktif sempurna (bola cermin, lensa kaca), evaluasi medan jarak bertanda (*Signed Distance Fields / SDF* via sphere tracing), atau simulasi pencahayaan global (*global illumination, soft shadows, caustics*) di mana efek pencahayaan sekunder bergantung pada informasi spasial non-lokal.
+  - *Kondisi Pembalik Pilihan (Crossover Point):* Algoritma backward *brute-force* tanpa akselerasi tidak akan pernah lebih cepat daripada forward pada scene garis ini. Pilihan hanya berbalik mengunggulkan backward jika: (a) scene memiliki densitas geometri masif ($N_{primitif} \gg W \times H$, jutaan hingga miliaran poligon) dan backward dipercepat oleh struktur spasial BVH ($\mathcal{O}((W \times H) \log N)$) pada resolusi layar tetap/rendah; atau (b) rendering menuntut simulasi efek pencahayaan global non-lokal rekursif yang secara fundamental tidak dapat diselesaikan oleh proyeksi lokal rasterisasi.
 
 ---
 
@@ -224,35 +227,43 @@ Ketika dua buah segitiga bersebelahan berbagi sebuah sisi bersama (*shared edge*
    - *Implementasi Bias:*
      $$\text{bias} = \begin{cases} 0, & \text{jika edge adalah Top atau Left} \\ -1, & \text{jika edge lainnya (Bottom atau Right)} \end{cases}$$
      Uji ketercakupan dievaluasi sebagai:
-     $$E(P) + \text{bias} \ge 0$$
-   Dengan formula bias integer ini, pada titik on-edge ($E = 0$), sisi top/left akan menghasilkan $0 + 0 \ge 0$ (lolos), sedangkan sisi lawannya menghasilkan $0 + (-1) = -1 \not\ge 0$ (gagal). Hasilnya: setiap piksel pada *shared edge* diklaim tepat satu kali (*watertight*, nol celah, nol duplikasi).
+     $E(P) + \text{bias} \ge 0$
+    Dengan formula bias integer ini, pada titik on-edge ($E = 0$), sisi top/left akan menghasilkan $0 + 0 \ge 0$ (lolos), sedangkan sisi lawannya menghasilkan $0 + (-1) = -1 \not\ge 0$ (gagal). Hasilnya: setiap piksel pada *shared edge* diklaim tepat satu kali (*watertight*, nol celah, nol duplikasi) sesuai formulasi standar grafika komputer (Hughes et al., 2013; Pineda, 1988).
 
 ---
 
 ### Q4. Sample-Centre dan Insiden Half-Pixel
 
-Berdasarkan penelaahan dokumen resmi Microsoft Learn *“Directly Mapping Texels to Pixels (Direct3D 9)”* serta dokumentasi OpenGL Wiki *“Vertex Post-Processing and Rasterization”*:
+Berdasarkan penelaahan dokumen resmi Microsoft Learn *“Directly Mapping Texels to Pixels (Direct3D 9)”* dan *“Rasterization Rules (Direct3D 10)”* serta dokumentasi OpenGL Wiki *“Vertex Post-Processing and Rasterization”*:
 
 #### Q4(a) Konvensi Koordinat Direct3D 9 vs Direct3D 10
-- **Direct3D 9:** Mengadopsi konvensi warisan di mana **sudut kiri-atas piksel** didefinisikan pada koordinat integer $(0.0, 0.0)$, sedangkan **pusat piksel** berada pada koordinat kontinu $(x + 0.5, y + 0.5)$. Namun, dalam sistem pemetaan texel Direct3D 9, texel tekstur pertama $(0, 0)$ dipetakan langsung ke $(0.0, 0.0)$ layar.
-- **Dampak Kebutuhan Offset:** Agar sebuah quad bertekstur 2D yang sejajar layar (*screen-aligned quad*) dapat terpetakan secara presisi 1:1 (*texel-to-pixel exact mapping*), pengembang game wajib menggeser seluruh koordinat verteks sebesar **setengah piksel ke arah kiri-atas** (offset $-0.5$ piksel pada koordinat $x$ dan $y$).
+- **Direct3D 9 (Konvensi Layar: Integer Adalah Pusat Piksel):**  
+  Pada Direct3D 9, koordinat ruang layar didefinisikan secara unik di mana koordinat integer $(0.0, 0.0)$ merepresentasikan **PUSAT dari piksel kiri-atas** (*center of the upper-left pixel*). Sudut kiri-atas sebenarnya dari sel piksel tersebut berada pada koordinat $(-0.5, -0.5)$. Artinya, sel area piksel pertama mencakup rentang kontinu $[-0.5, +0.5] \times [-0.5, +0.5]$.  
+  Ketika sebuah quad 2D sejajar layar (*screen-aligned quad*) didefinisikan dengan verteks ortografis naif dari $(0, 0)$ hingga $(W, H)$, batas-batas tepi quad memotong tepat di pusat piksel tepi layar, bukan di tepi terluar sel piksel.  
+  Di sisi lain, koordinat ruang tekstur $(u, v)$ normal membentang dari $0.0$ hingga $1.0$, di mana koordinat $(0.0, 0.0)$ merepresentasikan **SUDUT kiri-atas texel pertama**, bukan pusatnya. Pemetaan langsung verteks $(0.0, 0.0)$ layar ke koordinat tekstur $(0.0, 0.0)$ menyebabkan pusat piksel $(0, 0)$ layar mengambil sampel tepat di sudut persimpangan 4 texel.
+- **Dampak Kebutuhan Offset:**  
+  Untuk memetakan texel secara presisi 1:1 terhadap sel piksel layar (*exact texel-to-pixel mapping*), pengembang Direct3D 9 wajib menggeser seluruh koordinat verteks ruang layar sebesar **$-0.5$ unit** pada sumbu $x$ dan $y$ (`x -= 0.5f; y -= 0.5f`). Pergeseran ini menempatkan sudut quad tepat pada perbatasan luar sel piksel $[-0.5, W - 0.5] \times [-0.5, H - 0.5]$, sehingga pusat piksel integer $(x, y)$ tepat segaris dengan pusat texel $((x + 0.5)/W, (y + 0.5)/H)$.
 
 #### Q4(b) Gejala Citra Saat Offset Hilang (Bilinear Blur)
 Jika offset $-0.5$ tidak diterapkan pada Direct3D 9:
-- Titik pusat sampel piksel output $(x + 0.5, y + 0.5)$ jatuh tepat pada batas persimpangan empat texel sumber yang bertetangga (sudut koordinat texel integer).
-- Ketika sampling tekstur disetel ke filter linier/bilinear (`D3DTEXF_LINEAR`), sampler membaca 4 texel di sekitarnya dengan bobot interpolasi seimbang sebesar $0.25$ untuk masing-masing texel.
-- **Gejala Visual:** Seluruh elemen antarmuka 2D (UI), sprite bitmap, teks raster font, dan rendering *post-processing* blit tampak buram (*fuzzy/soft blur*) dan kehilangan ketajaman piksel aslinya.
+- Pusat sampel piksel output $(0, 0)$ memetakan ke koordinat tekstur $u = 0.0, v = 0.0$ yang berada tepat di sudut perbatasan texel.
+- Ketika penyaringan tekstur disetel ke mode linier/bilinear (`D3DTEXF_LINEAR`), sampler perangkat keras membaca 4 texel di sekitarnya dengan bobot interpolasi seimbang masing-masing $0.25$ (atau memadukan warna texel tepi dengan warna border/wrap).
+- **Gejala Visual:** Seluruh elemen antarmuka 2D (UI), teks font raster, sprite bitmap 2D, dan operasi blit *post-processing* layar penuh tampak buram (*fuzzy/soft blur*), kehilangan kontras piksel asli, dan mengalami pendaran warna (*color bleeding*) pada batas tepi.
 
 #### Q4(c) Konvensi Modern Direct3D 10 dan OpenGL
-Direct3D 10 (dan generasi sesudahnya, serta OpenGL dan WebGL) merombak total aturan rasterisasi untuk mengeliminasi jebakan ini:
-- Pusat piksel didefinisikan secara universal pada $(x + 0.5, y + 0.5)$ di dalam ruang koordinat jendela (*window space*), dan koordinat integer merepresentasikan indeks sel grid diskret.
-- Koordinat tekstur normal $(0.0, 0.0)$ dipetakan persis ke sudut luar ruang pandang, sehingga proyeksi quad ortografis dari $[0, W] \times [0, H]$ secara otomatis mendaratkan pusat sampel piksel $(x + 0.5, y + 0.5)$ tepat di atas pusat texel tekstur $(u + 0.5, v + 0.5)$ dengan bobot bilinear 1.0 (reproduksi identik tanpa blur).
+Direct3D 10 (dan generasi penerusnya D3D11, D3D12, serta OpenGL dan WebGL) merombak total aturan rasterisasi untuk mengeliminasi kebutuhan koreksi offset manual tersebut:
+- Koordinat integer $(0.0, 0.0)$ pada ruang jendela/layar didefinisikan ulang secara tegas sebagai **SUDUT kiri-atas** (*upper-left corner*) dari piksel pertama.
+- Pusat sampel piksel didefinisikan secara universal pada koordinat setengah-integer:
+  $$(p_x, p_y) = (x + 0.5, y + 0.5)$$
+- Dengan konvensi terpadu ini, quad ortografis berukuran $[0, W] \times [0, H]$ secara alami mencakup seluruh sel piksel diskret dari batas tepi terluar. Pusat piksel pertama pada $(0.5, 0.5)$ otomatis bertepatan dengan pusat texel pertama pada $((0 + 0.5)/W, (0 + 0.5)/H)$ dengan bobot bilinear tepat 1.0 (reproduksi piksel sempurna 1:1 tanpa blur dan tanpa perlu offset verteks).
 
 #### Q4(d) Era Waktu dan Sumber Terverifikasi
-- **Era Kejadian:** Sepanjang masa kejayaan DirectX 9 (kira-kira tahun 2002 hingga 2009). Ribuan judul game komersial era Windows XP mengalami *post-mortem* akibat isu ini sebelum Microsoft merilis panduan resmi di DirectX SDK.
-- **Rujukan Dokumentasi:**
-  1. Microsoft Corporation. (2002/2020). *Directly Mapping Texels to Pixels (Direct3D 9)*. Microsoft Learn / MSDN Library.
-  2. Khronos Group. (2022). *OpenGL Wiki: Vertex Post-Processing and Rasterization - Pixel Center Conventions*.
+- **Era Waktu Historis:**  
+  Direct3D 9 dirilis oleh Microsoft bersama DirectX 9.0 pada **Desember 2002** (dengan revisi DirectX 9.0c pada 2004 dan pembaruan SDK berkala hingga 2009). Selama hampir lima tahun era keemasan Windows XP, isu *half-pixel offset* menjadi jebakan klasik bagi para pengembang game PC sebelum Microsoft mempublikasikan artikel panduan resmi. Masalah ini diselesaikan secara permanen di tingkat arsitektur melalui peluncuran **Direct3D 10 bersama sistem operasi Windows Vista pada akhir 2006 / awal 2007**.
+- **Rujukan Dokumentasi Resmi:**
+  1. Microsoft Corporation. (2002/2020). *Directly Mapping Texels to Pixels (Direct3D 9)*. Microsoft Learn / MSDN Library. https://learn.microsoft.com/en-us/windows/win32/direct3d9/directly-mapping-texels-to-pixels
+  2. Microsoft Corporation. (2006/2021). *Rasterization Rules (Direct3D 10)*. Microsoft Learn. https://learn.microsoft.com/en-us/windows/win32/direct3d10/d3d10-graphics-programming-guide-rasterizer-stage-rules
+  3. Khronos Group. (2022). *OpenGL Wiki: Vertex Post-Processing and Rasterization - Pixel Center Conventions*. https://www.khronos.org/opengl/wiki/Vertex_Post-Processing
 
 ---
 
@@ -270,15 +281,15 @@ Direct3D 10 (dan generasi sesudahnya, serta OpenGL dan WebGL) merombak total atu
    - *Penggunaan pada Modul:* **Siluet terisi akhir dan swatch/marker legenda visual**.
 
 #### Q5(b) Tiga Syarat Legenda Aksesibel (CVD Modul 1 & 2)
-Mengacu pada standar desain aksesibilitas visual WCAG dan pengujian *Colour Vision Deficiency* (CVD):
+Mengacu pada standar desain aksesibilitas visual WCAG 2.1 (khususnya *Success Criterion 1.4.1: Use of Color*, Level A) dan pengujian *Colour Vision Deficiency* (CVD):
 1. **Ramp Warna Viridis Bergradasi Luminansi Monotonik:**  
-   Tidak mengandalkan rona warna (*hue*) semata. Viridis dirancang secara perseptual (*perceptually uniform*) dengan nilai kecerahan ($L^*$) yang meningkat konsisten dari gelap ke terang, sehingga informasi hierarki tetap terbaca pada persepsi monokromatik.
+   Tidak mengandalkan rona warna (*hue*) semata. Viridis dirancang secara perseptual (*perceptually uniform*) dengan nilai kecerahan ($L^*$) yang meningkat secara monotonik dari gelap ke terang, membantu keterbacaan hierarki visual pada persepsi monokromatik.
 2. **Bentuk Marker Geometris Unik (*Redundant Visual Coding*):**  
-   Setiap kategori diberi simbol bentuk yang berbeda (Persegi, Belah Ketupat, Segitiga, Lingkaran, Plus/Cross). Jika pengguna sama sekali tidak dapat membedakan spektrum warna, pembedaan kategori tetap 100% terjaga melalui bentuk.
-3. **Label Teks Eksplisit:**  
-   Setiap entri legenda menyertakan teks nama kategori yang jelas, bukan sekadar kotak warna tanpa keterangan tekstual.
+   Setiap kategori diberi simbol bentuk yang berbeda secara tegas (Persegi ■, Belah Ketupat ◆, Segitiga ▲, Lingkaran ●, Plus/Cross ✚). Jika pengguna sama sekali tidak dapat membedakan rona warna (atau saat kontras warna rendah terhadap latar belakang), pembedaan kategori tetap 100% terjaga melalui bentuk penanda geometris.
+3. **Label Teks Eksplisit Berkontras Tinggi:**  
+   Setiap entri legenda menyertakan teks nama kategori yang jelas (menggunakan warna slate-300 `#cbd5e1` dengan rasio kontras 12,02:1 terhadap latar belakang gelap `#0f172a`), bukan sekadar kotak warna tanpa keterangan tekstual.
 4. **Verifikasi Simulasi Filter SVG Deuteranopia:**  
-   Aplikasi menyediakan toggle interaktif yang mengaktifkan matriks transformasi warna Brettel/Vienot untuk membuktikan keterbacaan antarmuka di bawah kondisi buta warna parsial merah-hijau.
+   Aplikasi menyediakan toggle interaktif yang mengaktifkan matriks transformasi warna Brettel/Vienot untuk menguji secara langsung keterbacaan antarmuka di bawah kondisi buta warna parsial merah-hijau (*deuteranopia*).
 
 ---
 
@@ -331,9 +342,9 @@ Membaca dokumentasi resmi *Khronos Group OpenGL Wiki* pada topik *Vertex Post-Pr
 > *Alasan Teknis:* Arsitektur GPU GPU modern didesain secara paralel masif berbasis cluster SIMD (Warp/Wavefront) yang mengoptimalkan komputasi grid poligon $2 \times 2$ quad fragment. Algoritma garis Bresenham bersifat serial per langkah ($k+1$ bergantung pada $k$), sehingga menggeneralisasi garis menjadi quad poligon memungkinkan GPU memanfaatkan jalur paralel pipa pemroses segitiga yang sudah ada tanpa perlu sirkuit khusus yang terpisah.
 
 ### L1.6 Refleksi Kasus Half-Pixel dan Lokasi Kode
-1. **Letak Pusat Piksel:** Direct3D 9 menempatkan koordinat integer $(0, 0)$ pada sudut kiri-atas piksel, sehingga pusat sampel berada pada $(0.5, 0.5)$. Pada Direct3D 10, konvensi distandarisasi di mana pusat piksel kontinu didefinisikan secara eksplisit pada $(x + 0.5, y + 0.5)$.
+1. **Letak Pusat Piksel:** Direct3D 9 mendefinisikan koordinat integer $(0.0, 0.0)$ pada ruang layar sebagai **pusat** piksel kiri-atas (dengan sudut di $(-0.5, -0.5)$), sehingga pemetaan tekstur langsung memicu pergeseran setengah piksel. Pada Direct3D 10 dan OpenGL, konvensi distandarisasi di mana integer $(0, 0)$ adalah **sudut** kiri-atas piksel dan pusat sampel kontinu didefinisikan secara universal pada $(x + 0.5, y + 0.5)$.
 2. **Baris Kode Persis pada `raster.mjs`:**  
-   Konvensi ini dikodekan secara eksplisit pada fungsi rasterisasi segitiga di file [`raster.mjs`](file:///c:/Users/renal/Downloads/GrafikaKomputer/Modul2/raster.mjs#L148-L150):
+   Konvensi ini dikodekan secara eksplisit pada fungsi rasterisasi segitiga di file [`raster.mjs`](raster.mjs#L148-L150):
    ```javascript
    // SAMPLE-CENTRE (x + 0.5, y + 0.5) vs CORNER SAMPLING (x, y)
    const px = sampleCorner ? x : x + 0.5;
@@ -347,7 +358,7 @@ Membaca dokumentasi resmi *Khronos Group OpenGL Wiki* pada topik *Vertex Post-Pr
 ## 3. Lab 2
 
 ### L2.1 Implementasi Primitif From-Scratch
-Seluruh primitif rasterisasi diimplementasikan dalam [`raster.mjs`](file:///c:/Users/renal/Downloads/GrafikaKomputer/Modul2/raster.mjs) tanpa pustaka grafika eksternal:
+Seluruh primitif rasterisasi diimplementasikan dalam [`raster.mjs`](raster.mjs) tanpa pustaka grafika eksternal:
 - `Framebuffer`: Buffer citra RGBA berbasis typed array `Uint8ClampedArray` berukuran $W \times H \times 4$ dengan method `set()`, `get()`, dan `clear()`.
 - `lineDDA(A, B)`: Rasterisasi garis DDA dengan kalkulasi inkremental floating-point dan pembulatan `Math.round()`.
 - `lineBresenham(A, B)`: Algoritma garis Bresenham integer murni yang menangani seluruh 8 oktan koordinat secara simetris.
@@ -356,12 +367,12 @@ Seluruh primitif rasterisasi diimplementasikan dalam [`raster.mjs`](file:///c:/U
 - Dukungan I/O citra: Pembaca dan penulis format binary PPM (P6) serta encoder/decoder PNG murni berbasis built-in module `zlib` Node.js.
 
 ### L2.2 Hasil Pengujian Otomatis
-Rangkaian uji otomatis pada [`tests.mjs`](file:///c:/Users/renal/Downloads/GrafikaKomputer/Modul2/tests.mjs) dijalankan dengan perintah `npm test` dan menghasilkan **17/17 asersi lolos (100% LULUS)**:
+Rangkaian uji otomatis pada [`tests.mjs`](tests.mjs) dijalankan dengan perintah `npm test` dan menghasilkan **17/17 asersi lolos (100% LULUS)**:
 - Kasus garis $(2, 1) \to (9, 5)$: DDA dan Bresenham menghasilkan 8 piksel identik: `[[2,1],[3,2],[4,2],[5,3],[6,3],[7,4],[8,4],[9,5]]`.
 - Seluruh 8 oktan diuji dengan 8 refleksi segmen: semua menghasilkan panjang step dan titik ujung yang presisi.
 - Evaluasi edge function Contoh E4: $E_{AB}(C) = 28$ (Luas = 14), $P_1(3, 3) = (8, 12, 8)$ di dalam, $P_2(5, 5) = (16, -4, 16)$ di luar, $P_3(1, 4) = (15, 19, -6)$ di luar.
 - Koordinat barycentric $P_1 = (3/7, 2/7, 2/7)$ dengan jumlah bobot $1.0000000000000000$.
-- Kecocokan dengan *golden reference* segitiga `ref/tri_ref.ppm`: **100/100 piksel identik (100%), max |diff| = 0, PSNR = Infinity**.
+- Kecocokan dengan *golden reference* segitiga `ref/tri_ref.ppm`: **100/100 piksel identik (100%), max |diff| = 0, PSNR = Infinity**. (*Catatan Asal-Usul Referensi:* Berkas `ref/tri_ref.ppm` dan `ref/square_fill_ref.ppm` dibangkitkan secara lokal melalui skrip kalkulasi analitis independen sebagai tolok ukur acuan kebenaran (*oracle test*), karena repositori awal praktikum belum menyertakan citra biner referensi bawaan).
 
 ### L2.3 Diagnosis Bug Shared-Edge dan Watertightness
 Menggunakan contoh terpandu Modul 2 (§10): sebuah persegi $6 \times 6$ pada koordinat $[2, 8] \times [2, 8]$ dipecah menjadi dua segitiga sepanjang diagonal $y = x$:
@@ -445,7 +456,7 @@ Denah `pusaka_plan.json` dimuat ke dalam penampil berbasis Three.js (`web/viewer
 ![Gambar 10. Hasil export rendering Three.js](assets/plan_three.png)
 
 ### L3.2 Perbandingan Raster: From-Scratch vs Three.js
-Kedua citra raster ($800 \times 600$, 480.000 piksel) dibandingkan menggunakan skrip penguji [`compare.mjs`](file:///c:/Users/renal/Downloads/GrafikaKomputer/Modul2/compare.mjs):
+Kedua citra raster ($800 \times 600$, 480.000 piksel) dibandingkan menggunakan skrip penguji [`compare.mjs`](compare.mjs):
 
 | Parameter Metrik Citra | Nilai Terukur Aktual | Keterangan Evaluasi |
 |---|:---:|---|
@@ -466,9 +477,9 @@ Kedua citra raster ($800 \times 600$, 480.000 piksel) dibandingkan menggunakan s
 Sebagaimana diprediksikan oleh modul (§12.2): citra selisih sepenuhnya hitam pekat pada seluruh area latar belakang dan area interior bentuk. Perbedaan 1,04% terlokalisasi secara eksklusif pada batas tepi (*edge boundary*) selebar satu piksel. Hal ini disebabkan karena rasteriser manual menerapkan diskretisasi garis integer biner keras (menyala penuh atau mati), sedangkan WebGL pada Three.js menjalankan antialiasing dan pemetaan sub-piksel kontinu dengan *blending* fraksional di sepanjang batas poligon.
 
 ### L3.3 Benchmark Forward vs Backward
-Pengukuran waktu nyata dijalankan melalui [`bench.mjs`](file:///c:/Users/renal/Downloads/GrafikaKomputer/Modul2/bench.mjs) pada denah Pusaka3D (37 segmen garis, 800x600 piksel) dengan 7 iterasi pengulangan (nilai median dicatat):
+Pengukuran waktu nyata dijalankan melalui [`bench.mjs`](bench.mjs) pada denah Pusaka3D (37 segmen garis, 800x600 piksel) dengan 7 iterasi pengulangan (nilai median dicatat):
 
-| Skenario Pengujian | Metode Forward (Object-Order) | Metode Backward (Image-Order) | Rasio Kecepatan Aktual | Status Rekonsiliasi Prediksi |
+| Skenario Pengujian | Metode Forward (Object-Order) | Metode Backward (Image-Order Brute-Force) | Rasio Kecepatan Aktual | Status Rekonsiliasi Prediksi |
 |---|:---:|:---:|:---:|---|
 | **Zoom 1x** (skala 18) | **0,99 ms** (min: 0,67, max: 1,29) | **97,94 ms** (min: 90,72, max: 117,61) | **Forward ~99,2x lebih cepat** | Cocok dengan prediksi awal ($50\times - 150\times$) |
 | **Zoom 10x** (skala 180) | **1,28 ms** (min: 1,13, max: 1,68) | **102,39 ms** (min: 95,33, max: 111,01) | **Forward ~80,2x lebih cepat** | Cocok dengan prediksi awal ($60\times - 90\times$) |
@@ -478,12 +489,16 @@ Pengukuran waktu nyata dijalankan melalui [`bench.mjs`](file:///c:/Users/renal/D
 
 ![Gambar 12. Grafik benchmark forward vs backward](assets/forward_backward_benchmark.png)
 
-*Rekonsiliasi dan Keputusan Arsitektur Viewer:*  
-Hasil pengukuran membuktikan keunggulan mutlak pendekatan **Forward (Rasterisation)** untuk antarmuka denah interaktif pan/zoom. Pada frame rate interaktif 60 FPS (budget waktu 16,6 ms), Forward hanya mengonsumsi ~1 ms (~6% CPU budget), sedangkan Backward mengonsumsi ~100 ms (hanya sanggup ~10 FPS, menyebabkan *stuttering* parah). Oleh karena itu, viewer denah Pusaka3D ditetapkan mengadopsi pendekatan Forward.
+*Analisis Kompleksitas Terukur vs Teoretis:*  
+Penting untuk membedakan algoritma backward yang benar-benar diukur pada skrip pengujian dengan konsep ray tracing teoretis:
+1. **Algoritma Terukur (`bench.mjs`):** Menggunakan penelusuran citra *brute-force* tanpa akselerasi spasial. Untuk setiap piksel dari $800 \times 600 = 480.000$ piksel, dihitung jarak Euclidean terdekat ke seluruh 37 segmen garis secara serial. Total operasi jarak adalah $480.000 \times 37 = 17.760.000$ operasi per frame, sehingga menghasilkan waktu eksekusi $97,94$ ms (1x) dan $102,39$ ms (10x). Algoritma ini memiliki kompleksitas $\mathcal{O}(W \times H \times N_{segmen})$.
+2. **Algoritma Forward Terukur:** Mengeksekusi `lineBresenham` hanya pada 37 segmen garis aktif, dengan jumlah penulisan piksel $\approx 1.500$ piksel pada zoom 1x dan $\approx 15.000$ piksel pada zoom 10x. Kompleksitasnya adalah $\mathcal{O}(\sum L_i)$, menghasilkan waktu $0,99$ ms dan $1,28$ ms (~80x hingga ~100x lipat lebih cepat).
+3. **Keputusan Arsitektur Viewer:** Pada frame budget interaktif 60 FPS (16,6 ms), Forward hanya menghabiskan ~1 ms (~6% CPU budget), menjamin responsivitas tinggi pada antarmuka penampil web.
 
-*Dua Kondisi Konkret Pembalik Keputusan (Backward Lebih Unggul):*
-1. **Scene dengan Kerapatan Primitif Geometris Ekstrem ($N_{segmen} \gg W \times H$):** Jika denah candi dimodelkan dengan detail mikroskopis hingga memiliki $> 1.000.000$ segmen garis pada layar beresolusi rendah ($320 \times 240$), Forward akan mengalami biaya *overdraw* masif ($\mathcal{O}(N)$), sedangkan Backward yang didukung struktur akselerasi spasial (BVH) hanya memerlukan $\mathcal{O}((W \times H) \log N)$, membalik keunggulan ke Backward.
-2. **Kebutuhan Efek Visual Per-Piksel Non-Lokal Kompleks:** Jika aplikasi membutuhkan rendering jarak bidang bertanda kontinu (*Signed Distance Fields / SDF*), efek *ambient occlusion* 2D, bayangan lembut analitis (*soft drop shadows*), atau efek refraksi lensa cembung interaktif, Backward secara alami mengevaluasi medan jarak kontinu per piksel tanpa perlu memecah bentuk menjadi jutaan primitif baru.
+*Dua Kondisi Pembalik Pilihan (Kapan Backward Berbalik Lebih Unggul):*
+Pendekatan backward *brute-force* yang diukur tidak akan pernah lebih cepat daripada forward pada resolusi ini. Pemilihan arsitektur hanya dapat berbalik mengunggulkan backward apabila:
+1. **Scene dengan Kerapatan Primitif Geometris Ekstrem ($N_{primitif} \gg W \times H$) DENGAN Struktur Akselerasi Spasial (BVH):** Jika scene memiliki puluhan juta poligon detail mikro dan algoritma backward memanfaatkan *Bounding Volume Hierarchy* (BVH / kd-Tree) sehingga kompleksitasnya tereduksi menjadi $\mathcal{O}((W \times H) \log N)$, sementara Forward harus memproses jutaan poligon yang memicu *geometry pipeline bottleneck* dan *overdraw* masif pada resolusi layar tetap.
+2. **Kebutuhan Evaluasi Optik Global Non-Lokal:** Jika aplikasi membutuhkan rendering jarak bidang bertanda kontinu (*Signed Distance Fields / SDF* via *sphere tracing*), simulasi pantulan cermin rekursif (*ray-traced reflections*), refraksi transmisi kaca, bayangan lembut analitis (*soft area shadows*), atau *ambient occlusion* 2D yang menuntut penelusuran berkas sinar bebas arah dalam ruang 3D kontinu yang tidak dapat ditangani oleh proyeksi lokal rasterisasi.
 
 ### L3.4 Legenda Aksesibel dan Uji Buta Warna (CVD)
 Halaman web penampil (`web/index.html`) dilengkapi legenda interaktif yang memuat lima kategori arsitektural:
@@ -493,7 +508,7 @@ Halaman web penampil (`web/index.html`) dilengkapi legenda interaktif yang memua
 4. **Shrine Sudut:** `#5ec962` (Viridis Hijau Muda, luminansi sedang-tinggi) — Simbol: **Lingkaran (●)**
 5. **Sumbu / Axis:** `#fde725` (Viridis Kuning Terang, luminansi tinggi) — Simbol: **Tanda Plus (✚)**
 
-Legenda dilengkapi toggle filter SVG yang menerapkan matriks simulasi *Deuteranopia* (dichromacy merah-hijau).
+Legenda dilengkapi toggle filter SVG yang menerapkan matriks transformasi warna Brettel / Vienot untuk simulasi *Deuteranopia* (dichromacy merah-hijau).
 
 **File gambar:** `assets/legend_cvd_off.png`  
 **Caption:** Gambar 13. Tampilan antarmuka penampil dan legenda aksesibel pada kondisi normal (filter simulasi deuteranopia NONAKTIF).
@@ -505,11 +520,24 @@ Legenda dilengkapi toggle filter SVG yang menerapkan matriks simulasi *Deuterano
 
 ![Gambar 14. Legenda aksesibel deuteranopia](assets/legend_cvd_on.png)
 
-*Verifikasi Aksesibilitas:*  
-Pemeriksaan visual membuktikan bahwa saat filter deuteranopia aktif, perbedaan warna merah-hijau tereduksi menjadi spektrum kuning-biru. Namun, kelima kategori **tetap terbedakan secara tegas 100%** karena didukung oleh variasi kontras luminansi yang bertingkat dari gelap ke terang, bentuk marker geometris yang unik, dan label teks deskriptif (*redundant visual coding*).
+*Perhitungan Rasio Kontras WCAG 2.1:*  
+Evaluasi rasio kontras luminansi relatif ($L$) dihitung berdasarkan formula resmi W3C WCAG 2.1 terhadap warna latar belakang viewer dark slate `#0f172a` ($L_{bg} = 0,0088$):
 
-*Batasan Simulasi:*  
-Filter SVG adalah simulasi visual matematika matematis berbasis model Brettel/Vienot dan bukan sertifikasi uji klinis oftalmologi; namun simulasi ini terbukti efektif memenuhi kriteria panduan WCAG 2.1 Level AA.
+| Elemen & Kategori | Kode Warna Hex | Luminansi Relatif ($L$) | Rasio Kontras thd Background `#0f172a` | Evaluasi Kriteria WCAG 2.1 |
+|---|:---:|:---:|:---:|---|
+| **Dinding Luar** | `#440154` | $0,0189$ | **1,17 : 1** | Gagal kriteria non-teks SC 1.4.11 (ambang batas $\ge 3:1$). Memerlukan penanda redundan. |
+| **Cella (Ruang Dalam)** | `#3b528b` | $0,0883$ | **2,35 : 1** | Gagal kriteria non-teks SC 1.4.11 (ambang batas $\ge 3:1$). Memerlukan penanda redundan. |
+| **Tangga Masuk** | `#21918c` | $0,2247$ | **4,67 : 1** | **Lolos** non-teks SC 1.4.11 ($\ge 3:1$) & teks normal SC 1.4.3 Level AA ($\ge 4,5:1$). |
+| **Shrine Sudut** | `#5ec962` | $0,4503$ | **8,51 : 1** | **Lolos** non-teks ($\ge 3:1$) & teks normal SC 1.4.6 Level AAA ($\ge 7:1$). |
+| **Sumbu / Axis** | `#fde725` | $0,7817$ | **14,14 : 1** | **Lolos** non-teks ($\ge 3:1$) & teks normal SC 1.4.6 Level AAA ($\ge 7:1$). |
+| **Label Teks UI** | `#cbd5e1` / `#f8fafc` | $0,6572 - 0,9536$ | **12,02 : 1 – 17,06 : 1** | **Lolos Sangat Tinggi** Level AAA untuk seluruh elemen teks. |
+
+*Batasan Klaim Aksesibilitas Terverifikasi:*  
+Klaim aksesibilitas proyek ini **dibatasi secara ketat pada kriteria yang benar-benar diverifikasi secara empiris**: **WCAG 2.1 Success Criterion 1.4.1 (Use of Color - Level A)**.  
+Karena warna gelap Viridis (`#440154` dan `#3b528b`) memiliki rasio kontras non-teks di bawah ambang batas $3:1$ terhadap latar belakang kanvas gelap (`#0f172a`), sistem antarmuka **tidak boleh mengandalkan warna semata**. Di sinilah letak keberhasilan desain aksesibel Modul 2: border/kontur putih pada marker, variasi 5 bentuk geometris unik, serta label teks deskriptif berkontras sangat tinggi (>12:1) menjamin keterbacaan total bagi seluruh pengguna termasuk penderita buta warna monokromatik dan dikromatik.
+
+*Batasan Simulasi Filter SVG:*  
+Filter SVG adalah simulasi optik matematis berbasis model Brettel/Vienot (Vienot et al., 1999) dan bukan sertifikasi uji klinis oftalmologi; namun simulasi ini membuktikan secara empiris bahwa pembedaan kategori tidak hilang di bawah reduksi spektrum warna.
 
 ### L3.5 Publikasi dan Reproduksibilitas
 - **Penyajian Lokal:** Halaman web dilayani secara mandiri melalui static web server via perintah `npx serve -l 3000 web`.
@@ -528,7 +556,14 @@ Filter SVG adalah simulasi visual matematika matematis berbasis model Brettel/Vi
    Sebagaimana dianalisis pada L1.3, satu segmen dinding bergerak secara deterministik dari representasi numerik JSON di CPU, ditransformasikan ke koordinat layar $S_0(184, 496)$ dan $S_1(616, 496)$, dipindai menjadi 433 sampel oleh rasteriser Bresenham, diwarnai dengan atribut kategori, divalidasi oleh scissor test, dan dituliskan ke dalam byte array framebuffer.
 3. **Analisis Gejala Bila Satu Tahap Dilewati:**  
    - *Jika Tahap 3 (Primitive Assembly & Clipping) Dilewati:*  
-     Segmen garis atau segitiga yang memiliki verteks di luar batas pandang layar (misalnya saat pengguna melakukan zoom $10\times$) akan mencoba mengakses indeks memori di luar batas array framebuffer ($x < 0$ atau $x \ge 800$). Pada software rasteriser, hal ini mengakibatkan *Out-of-Bounds memory crash* atau korupsi memori; sedangkan pada GPU, garis akan terdistorsi melintasi bidang pandang (*frustum projection wraparound artifact*).
+     - **Pada Software Rasteriser JavaScript & TypedArray (`Uint8ClampedArray`):**  
+       Sesuai spesifikasi ECMAScript, `Uint8ClampedArray` memiliki keamanan memori terkelola (*memory-safe*): penulisan di luar batas indeks array tidak memicu *memory crash* ataupun melempar `RangeError`, melainkan **diabaikan secara diam-diam (*silent no-op write*)**, sedangkan pembacaan di luar batas mengembalikan nilai `undefined`.  
+       Namun, tanpa clipping dan tanpa pemeriksaan koordinat 2D, pemetaan koordinat $(x, y)$ ke indeks linier 1D:
+       $\text{offset} = (y \times W + x) \times 4$
+       dapat memicu anomali logis. Misalnya, jika $x = -1$ dan $y = 5$, perhitungannya menghasilkan offset $(5 \times 800 - 1) \times 4 = 15.996$. Indeks ini tetap berada di dalam rentang buffer memori yang valid, namun secara keliru menimpa data piksel pada baris sebelumnya ($y = 4, x = 799$), menghasilkan **cacat visual pelipatan baris (*scanline horizontal wraparound artifact*)**. Pada `raster.mjs`, cacat ini dicegah oleh penjaga batas (*scissor boundary guard*): `if (x < 0 || x >= this.w || y < 0 || y >= this.h) return;`. Jika tahap clipping dan guard ini diabaikan bersamaan, koordinat dengan $x < 0$ melipat ke baris di atasnya, sedangkan koordinat dengan indeks di luar buffer ($y < 0$ atau $\ge H$) hilang secara senyap (*silent drop*).
+     - **Pada Hardware GPU (Homogeneous Clip Space):**  
+       Jika clipping geometris terhadap volume frustum pandang ($w_c \ge -x_c, w_c \ge x_c, \dots, w_c > \epsilon$) dilewati sebelum tahap *perspective divide*:  
+       Verteks yang berada di belakang bidang pandang kamera memiliki nilai komponen homogen $w \le 0$. Melakukan pembagian perspektif $x' = x/w, y' = y/w$ dengan $w \le 0$ menyebabkan pembalikan proyeksi hiperbolik (*hyperbolic projection reversal*): geometri di belakang pengamat terbalik dan diproyeksikan ke bidang pandang depan sebagai poligon raksasa tak beraturan yang membentang melintasi seluruh layar (*frustum projection wraparound / inverted geometry*), serta memicu singularitas pembagian dengan nol ($x/0 = \pm\infty$ atau `NaN`).
 
 ### A2. Primitif dan Referensi
 1. **Verifikasi Manual Satu Piksel Aktual:**  
@@ -543,7 +578,7 @@ Filter SVG adalah simulasi visual matematika matematis berbasis model Brettel/Vi
    - $w_C = 10.0 + 0 = 10.0 \ge 0$
    - *Kesimpulan:* Karena seluruh bobot $\ge 0$, piksel $(3, 3)$ secara sah dinyalakan di dalam framebuffer.
 2. **Kecocokan Garis dan Referensi:**  
-   Fungsi `lineDDA` dan `lineBresenham` terbukti menghasilkan 8 piksel identik untuk $(2,1) \to (9,5)$, dan `triangle()` terbukti menghasilkan kesesuaian bita 100% terhadap `ref/tri_ref.ppm` dengan $\max |\text{diff}| = 0$ dan PSNR = $\infty$.
+   Fungsi `lineDDA` dan `lineBresenham` terbukti menghasilkan 8 piksel identik untuk $(2,1) \to (9,5)$, dan `triangle()` terbukti menghasilkan kesesuaian bita 100% terhadap `ref/tri_ref.ppm` dengan $\max |\text{diff}| = 0$ dan PSNR = $\infty$. Berkas referensi `ref/tri_ref.ppm` dan `ref/square_fill_ref.ppm` dibangkitkan secara independen melalui skrip analitis matematis terpisah sebagai *oracle* pengujian otomatis.
 
 ### A3. Diagnosis dan Perbaikan Shared-Edge
 1. **Diagnosis Awal:**  
@@ -557,14 +592,16 @@ Filter SVG adalah simulasi visual matematika matematis berbasis model Brettel/Vi
 1. **Analisis Komparasi Citra:**  
    Komparasi antara `out/plan_scratch.ppm` dan `assets/plan_three.png` menunjukkan kecocokan piksel sebesar **98,96%** dengan **PSNR = 28,13 dB** dan **SSIM = 0,928**. Selisih 1,04% terlokalisasi murni pada batas terluar segmen garis selebar 1 piksel akibat antialiasing sub-piksel Three.js.
 2. **Keputusan Arsitektur Viewer:**  
-   Pendekatan Forward dipilih secara definitif karena keunggulan kecepatannya yang mencapai ~80x hingga ~100x lipat lebih cepat daripada Backward pada beban scene denah candi, menjamin latensi interaksi $< 2$ ms (sangat responsif pada 60 FPS).
-3. **Dua Kondisi Pembalik Pilihan:**  
-   - Jumlah primitif meningkat drastis hingga orde jutaan poligon pada viewport resolusi rendah.
-   - Kebutuhan perhitungan efek analitis spasial global (ray-traced reflections, ambient occlusion, signed distance field rendering).
+   Pendekatan Forward (Rasterisation) dipilih secara definitif karena keunggulan kecepatannya yang mencapai ~80x hingga ~100x lipat lebih cepat daripada Backward pada beban scene denah candi ($0,99$ ms vs $97,94$ ms), menjamin latensi interaksi $< 2$ ms (sangat responsif pada 60 FPS).
+3. **Distingsi Algoritma Terukur vs Teoretis & Kondisi Pembalik Pilihan:**  
+   - Algoritma backward yang diukur dalam `bench.mjs` adalah penelusuran *brute-force* $\mathcal{O}(W \times H \times N_{segmen}) = 17.760.000$ operasi pengujian jarak, yang **tidak akan pernah lebih cepat** daripada forward pada resolusi ini.
+   - Pilihan HANYA dapat berbalik mengunggulkan backward apabila:
+     1. Scene memiliki kerapatan geometri masif ($N_{primitif} \gg W \times H$, misalnya jutaan poligon) dan backward dipercepat oleh struktur hierarki spasial BVH ($\mathcal{O}((W \times H) \log N)$), melampaui biaya proses forward $\mathcal{O}(N)$ pada resolusi layar tetap.
+     2. Rendering membutuhkan kalkulasi optik non-lokal kontinu, seperti evaluasi medan jarak bertanda (*Signed Distance Fields / SDF*), pantulan rekursif sempurna, refraksi kaustik, atau *ambient occlusion* spasial global.
 
 ### A5. Aksesibilitas
-1. **Verifikasi Legenda Visual:**  
-   Sebagaimana dibuktikan pada Gambar 13 dan 14, kombinasi tiga lapis redundansi visual—skala luminansi viridis, variasi bentuk marker (persegi, belah ketupat, segitiga, lingkaran, cross), dan label teks—membuat kelima elemen candi Pusaka3D (dinding, cella, tangga, shrine, sumbu) tetap terbaca dan terbedakan secara mandiri tanpa ambigu, baik dalam kondisi penglihatan trikromatik normal maupun saat filter simulasi deuteranopia diaktifkan.
+1. **Verifikasi Legenda Visual & Pembatasan Klaim:**  
+   Sebagaimana dibuktikan pada Gambar 13 dan 14 serta Tabel Kontras pada L3.4, klaim kepatuhan aksesibilitas secara ketat berfokus pada **WCAG 2.1 SC 1.4.1 (Use of Color, Level A)**. Kombinasi tiga lapis redundansi visual—skala luminansi viridis, variasi bentuk marker geometris unik (persegi, belah ketupat, segitiga, lingkaran, cross), serta label teks berasio kontras $>12:1$—membuat kelima elemen candi Pusaka3D (dinding, cella, tangga, shrine, sumbu) tetap terbaca dan terbedakan secara mandiri tanpa ambigu, mengatasi keterbatasan kontras dua warna tergelap Viridis (`#440154` dan `#3b528b`) terhadap latar belakang gelap.
 
 ---
 
@@ -590,6 +627,8 @@ Khronos Group. (2022). *Vertex Post-Processing and Rasterization*. OpenGL Wiki. 
 Marschner, S., & Shirley, P. (2021). *Fundamentals of Computer Graphics* (5th ed.). A K Peters/CRC Press. https://doi.org/10.1201/9780429274299
 
 Microsoft Learn. (2002/2020). *Directly Mapping Texels to Pixels (Direct3D 9)*. Microsoft Corporation. Diambil dari https://learn.microsoft.com/en-us/windows/win32/direct3d9/directly-mapping-texels-to-pixels
+
+Microsoft Learn. (2006/2021). *Rasterization Rules (Direct3D 10)*. Microsoft Corporation. Diambil dari https://learn.microsoft.com/en-us/windows/win32/direct3d10/d3d10-graphics-programming-guide-rasterizer-stage-rules
 
 Pineda, J. (1988). A parallel algorithm for polygon rasterization. *ACM SIGGRAPH Computer Graphics*, 22(4), 17–20. https://doi.org/10.1145/54852.378457
 
