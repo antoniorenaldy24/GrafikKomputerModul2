@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pusaka3D - Denah Candi & Viewer Aksesibel (Modul 2)</title>
+  <link rel="stylesheet" href="cvd.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+
+  <!-- Definisi Filter SVG Simulasi Deuteranopia (Color Vision Deficiency) -->
+  <svg style="position: absolute; width: 0; height: 0; overflow: hidden;" aria-hidden="true">
+    <defs>
+      <filter id="deuteranopia-filter">
+        <!-- Matriks Transformasi Standar Brettel / Vienot untuk Simulasi Buta Warna Parsial Merah-Hijau (Deuteranopia) -->
+        <feColorMatrix type="matrix" values="
+          0.625 0.375 0.000 0 0
+          0.700 0.300 0.000 0 0
+          0.000 0.300 0.700 0 0
+          0.000 0.000 0.000 1 0" />
+      </filter>
+    </defs>
+  </svg>
+
+  <header>
+    <h1>Pusaka3D — Rendering Pipeline & Primitif 2D</h1>
+    <p>Praktikum Grafika Komputer (Modul 2) • S1 Informatika Universitas Muhammadiyah Surabaya</p>
+  </header>
+
+  <!-- Area Target yang Dipengaruhi Toggle CVD -->
+  <div id="accessible-target-area" class="main-container">
+    
+    <!-- Viewport Canvas WebGL -->
+    <div class="viewport-card">
+      <div style="width: 100%; display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <span style="font-size: 0.85rem; font-weight: 600; color: #94a3b8;">WebGL Viewport (800 &times; 600 px • setPixelRatio 1)</span>
+        <span class="status-badge">Renderer: Three.js r170</span>
+      </div>
+      <canvas id="webgl-canvas" width="800" height="600"></canvas>
+    </div>
+
+    <!-- Sidebar Kontrol & Legenda Aksesibel -->
+    <div class="sidebar">
+      
+      <!-- Panel Legenda Aksesibel (5 Kategori Modul 2) -->
+      <div class="panel-card" id="legend-card">
+        <h2>Legenda 2D Aksesibel</h2>
+        <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 12px;">
+          Memenuhi 3 kriteria aksesibilitas Modul 1 & 2: ramp viridis dengan variasi luminansi, bentuk marker unik, dan label teks eksplisit.
+        </p>
+
+        <div class="legend-list">
+          <!-- 1. Dinding Luar -->
+          <div class="legend-item">
+            <div class="marker-box marker-square" style="background-color: #440154;">■</div>
+            <div class="legend-info">
+              <span class="legend-label">Dinding Luar</span>
+              <span class="legend-sub">Viridis 0% • Luminansi Rendah • Persegi</span>
+            </div>
+          </div>
+
+          <!-- 2. Cella -->
+          <div class="legend-item">
+            <div class="marker-box marker-diamond" style="background-color: #3b528b;">◆</div>
+            <div class="legend-info">
+              <span class="legend-label">Cella (Ruang Dalam)</span>
+              <span class="legend-sub">Viridis 25% • Luminansi Sedang-Rendah • Belah Ketupat</span>
+            </div>
+          </div>
+
+          <!-- 3. Tangga Masuk -->
+          <div class="legend-item">
+            <div class="marker-box marker-triangle" style="background-color: #21918c;">▲</div>
+            <div class="legend-info">
+              <span class="legend-label">Tangga Masuk</span>
+              <span class="legend-sub">Viridis 50% • Luminansi Sedang • Segitiga</span>
+            </div>
+          </div>
+
+          <!-- 4. Shrine Sudut -->
+          <div class="legend-item">
+            <div class="marker-box marker-circle" style="background-color: #5ec962;">●</div>
+            <div class="legend-info">
+              <span class="legend-label">Shrine Sudut</span>
+              <span class="legend-sub">Viridis 75% • Luminansi Sedang-Tinggi • Lingkaran</span>
+            </div>
+          </div>
+
+          <!-- 5. Sumbu / Axis -->
+          <div class="legend-item">
+            <div class="marker-box marker-cross" style="background-color: #fde725; color: #000;">✚</div>
+            <div class="legend-info">
+              <span class="legend-label">Sumbu / Axis</span>
+              <span class="legend-sub">Viridis 100% • Luminansi Tinggi • Tanda Plus</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Toggle Simulasi Deuteranopia -->
+        <div class="toggle-container">
+          <div style="display: flex; flex-direction: column;">
+            <span style="font-size: 0.85rem; font-weight: 600;">Simulate Deuteranopia</span>
+            <span style="font-size: 0.75rem; color: #94a3b8;">Filter SVG persepsi merah-hijau</span>
+          </div>
+          <label class="switch" for="deuteranopia-toggle">
+            <input type="checkbox" id="deuteranopia-toggle">
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- Panel Aksi & Verifikasi -->
+      <div class="panel-card">
+        <h2>Aksi Export & Validasi</h2>
+        <div class="btn-group">
+          <button id="export-btn" class="btn btn-primary">
+            <svg width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/><path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/></svg>
+            Export Canvas (plan_three.png)
+          </button>
+        </div>
+        <div style="margin-top: 14px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.08); font-size: 0.75rem; color: #94a3b8; line-height: 1.4;">
+          <strong>Pemeriksaan Pipeline:</strong> Input denah sama dengan rasteriser manual (<code>pusaka_plan.json</code>), ukuran 800&times;600, <code>pixelRatio = 1</code>.
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script type="module" src="./viewer.mjs"></script>
+</body>
+</html>
