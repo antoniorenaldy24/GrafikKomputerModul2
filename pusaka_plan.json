@@ -1,0 +1,202 @@
+{
+  "name": "Pusaka3D - Denah Skematis Candi Warisan Budaya",
+  "source": "Fallback Skematis Sintetis Modul 2 (S1 Informatika UM Surabaya)",
+  "description": "Denah lantai skematis candi berlabel dengan 13 polyline dan 37 segmen garis, mencakup 5 kategori arsitektural: dinding, cella, tangga, shrine, sumbu.",
+  "units": "meter",
+  "scale": 18.0,
+  "origin": [400, 280],
+  "categories": [
+    { "id": "dinding", "label": "Dinding Luar", "color": [68, 1, 84], "fillColor": [51, 1, 63], "marker": "square" },
+    { "id": "cella", "label": "Cella (Ruang Dalam)", "color": [59, 82, 139], "fillColor": [44, 62, 104], "marker": "diamond" },
+    { "id": "tangga", "label": "Tangga Masuk", "color": [33, 145, 140], "fillColor": [25, 109, 105], "marker": "triangle" },
+    { "id": "shrine", "label": "Shrine Sudut", "color": [94, 201, 98], "fillColor": [71, 151, 74], "marker": "circle" },
+    { "id": "sumbu", "label": "Sumbu / Axis", "color": [253, 231, 37], "fillColor": [190, 173, 28], "marker": "cross" }
+  ],
+  "polylines": [
+    {
+      "id": "outer_wall",
+      "category": "dinding",
+      "closed": true,
+      "points": [
+        [-12, -12],
+        [12, -12],
+        [12, 12],
+        [-12, 12]
+      ]
+    },
+    {
+      "id": "inner_cella",
+      "category": "cella",
+      "closed": true,
+      "points": [
+        [-5, -5],
+        [5, -5],
+        [5, 5],
+        [-5, 5]
+      ]
+    },
+    {
+      "id": "shrine_nw",
+      "category": "shrine",
+      "closed": true,
+      "points": [
+        [-10, 6],
+        [-6, 6],
+        [-6, 10],
+        [-10, 10]
+      ]
+    },
+    {
+      "id": "shrine_ne",
+      "category": "shrine",
+      "closed": true,
+      "points": [
+        [6, 6],
+        [10, 6],
+        [10, 10],
+        [6, 10]
+      ]
+    },
+    {
+      "id": "shrine_se",
+      "category": "shrine",
+      "closed": true,
+      "points": [
+        [6, -10],
+        [10, -10],
+        [10, -6],
+        [6, -6]
+      ]
+    },
+    {
+      "id": "shrine_sw",
+      "category": "shrine",
+      "closed": true,
+      "points": [
+        [-10, -10],
+        [-6, -10],
+        [-6, -6],
+        [-10, -6]
+      ]
+    },
+    {
+      "id": "stairs_step1",
+      "category": "tangga",
+      "closed": false,
+      "points": [
+        [-4, -12],
+        [-4, -13],
+        [4, -13],
+        [4, -12]
+      ]
+    },
+    {
+      "id": "stairs_step2",
+      "category": "tangga",
+      "closed": false,
+      "points": [
+        [-3.5, -13],
+        [-3.5, -14],
+        [3.5, -14],
+        [3.5, -13]
+      ]
+    },
+    {
+      "id": "stairs_step3",
+      "category": "tangga",
+      "closed": false,
+      "points": [
+        [-3, -14],
+        [-3, -15],
+        [3, -15],
+        [3, -14]
+      ]
+    },
+    {
+      "id": "stairs_balustrade_left",
+      "category": "tangga",
+      "closed": false,
+      "points": [
+        [-4, -12],
+        [-3, -15]
+      ]
+    },
+    {
+      "id": "stairs_balustrade_right",
+      "category": "tangga",
+      "closed": false,
+      "points": [
+        [4, -12],
+        [3, -15]
+      ]
+    },
+    {
+      "id": "axis_ew",
+      "category": "sumbu",
+      "closed": false,
+      "points": [
+        [-14, 0],
+        [14, 0]
+      ]
+    },
+    {
+      "id": "axis_ns",
+      "category": "sumbu",
+      "closed": false,
+      "points": [
+        [0, -17],
+        [0, 14]
+      ]
+    }
+  ],
+  "fills": [
+    {
+      "id": "outer_wall_fill",
+      "category": "dinding",
+      "triangles": [
+        [[-12, -12], [12, -12], [12, 12]],
+        [[-12, -12], [12, 12], [-12, 12]]
+      ]
+    },
+    {
+      "id": "inner_cella_fill",
+      "category": "cella",
+      "triangles": [
+        [[-5, -5], [5, -5], [5, 5]],
+        [[-5, -5], [5, 5], [-5, 5]]
+      ]
+    },
+    {
+      "id": "shrine_nw_fill",
+      "category": "shrine",
+      "triangles": [
+        [[-10, 6], [-6, 6], [-6, 10]],
+        [[-10, 6], [-6, 10], [-10, 10]]
+      ]
+    },
+    {
+      "id": "shrine_ne_fill",
+      "category": "shrine",
+      "triangles": [
+        [[6, 6], [10, 6], [10, 10]],
+        [[6, 6], [10, 10], [6, 10]]
+      ]
+    },
+    {
+      "id": "shrine_se_fill",
+      "category": "shrine",
+      "triangles": [
+        [[6, -10], [10, -10], [10, -6]],
+        [[6, -10], [10, -6], [6, -6]]
+      ]
+    },
+    {
+      "id": "shrine_sw_fill",
+      "category": "shrine",
+      "triangles": [
+        [[-10, -10], [-6, -10], [-6, -6]],
+        [[-10, -10], [-6, -6], [-10, -6]]
+      ]
+    }
+  ]
+}

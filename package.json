@@ -1,0 +1,20 @@
+{
+  "name": "grafika-komputer-modul-2",
+  "version": "1.0.0",
+  "description": "Modul 2 Praktikum Grafika Komputer: Rendering Pipeline & Primitif 2D",
+  "type": "module",
+  "scripts": {
+    "test": "node tests.mjs",
+    "draw:square": "node draw_square.mjs --mode fill",
+    "draw:plan": "node draw_plan.mjs --w 800 --h 600",
+    "bug:gap": "node triangle_gap_bug.mjs",
+    "bench": "node bench.mjs",
+    "serve": "serve web"
+  },
+  "dependencies": {
+    "three": "^0.170.0"
+  },
+  "devDependencies": {
+    "serve": "^14.2.4"
+  }
+}
